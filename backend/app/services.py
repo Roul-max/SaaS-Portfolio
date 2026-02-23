@@ -8,6 +8,7 @@ from .database import db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 # ==========================================================
 # Resume Context Builder
 # ==========================================================
@@ -74,26 +75,43 @@ Role: Computer Science Student & Full Stack Developer
 # ==========================================================
 # Intent Detection
 # ==========================================================
+def normalize_text(text: str) -> str:
+    return re.sub(r"[^\w\s]", "", text.lower())
+
+
 def is_resume_related(question: str) -> bool:
-    question = question.lower()
-    question = re.sub(r"[^\w\s]", "", question)
+    question = normalize_text(question)
 
     resume_keywords = [
         "skill", "project", "experience", "internship",
         "education", "technology", "stack",
         "portfolio", "work", "role", "company",
         "achievement", "interest", "contact",
-        "github", "linkedin", "backend", "frontend",
-        "architecture", "database", "authentication",
-        "authorization", "jwt", "api", "rbac",
-        "deployment", "mongodb", "react",
-        "node", "express", "python",
-        "system", "design", "built", "developed",
-        "create", "made",
-        "rohit", "yourself", "about you"
+        "github", "linkedin",
+        "backend", "frontend", "architecture",
+        "database", "authentication", "authorization",
+        "jwt", "api", "rbac", "deployment",
+        "mongodb", "react", "node", "express",
+        "python", "system", "design",
+        "built", "developed", "create", "made"
     ]
 
     return any(keyword in question for keyword in resume_keywords)
+
+
+def is_about_rohit(question: str) -> bool:
+    question = normalize_text(question)
+    return any(
+        phrase in question
+        for phrase in [
+            "rohit",
+            "who are you",
+            "about you",
+            "tell me about yourself",
+            "introduce yourself",
+            "your background"
+        ]
+    )
 
 
 # ==========================================================
@@ -118,7 +136,7 @@ def is_malicious_input(text: str) -> bool:
 
 
 # ==========================================================
-# OpenRouter Call
+# OpenRouter Wrapper
 # ==========================================================
 def call_openrouter(system_prompt: str, user_message: str) -> str:
     response = requests.post(
@@ -144,7 +162,7 @@ def call_openrouter(system_prompt: str, user_message: str) -> str:
 
 
 # ==========================================================
-# Main AI Function
+# Main AI Response Function
 # ==========================================================
 def get_ai_response(user_message: str) -> str:
 
@@ -156,8 +174,12 @@ def get_ai_response(user_message: str) -> str:
 
     resume_context = build_resume_context()
 
-    # ---------------- RESUME MODE ----------------
-    if is_resume_related(user_message):
+    # ======================================================
+    # RESUME MODE (Structured Format)
+    # ======================================================
+    if is_resume_related(user_message) or is_about_rohit(user_message):
+
+        logger.info("Resume Mode Activated")
 
         system_prompt = f"""
 You are Rohit Kumar's AI Resume Assistant.
@@ -189,22 +211,36 @@ PORTFOLIO DATA:
 
         response = call_openrouter(system_prompt, user_message)
 
-    # ---------------- GENERAL MODE ----------------
+    # ======================================================
+    # GENERAL MODE (Unrelated Question Handling)
+    # ======================================================
     else:
 
-        system_prompt = """
-You are a helpful, professional AI assistant.
+        logger.info("General Mode Activated")
 
-- Provide clear, well-structured answers.
-- Do NOT use resume summary format.
-- Use headings and bullet points when helpful.
-- Keep responses concise but informative.
+        system_prompt = """
+You are Rohit Kumar's AI assistant.
+
+If the question is NOT related to Rohit's professional portfolio:
+
+1. Start by stating:
+   "This question is not related to Rohit's professional portfolio."
+2. Then provide a short, clear, well-structured answer.
+3. Keep it concise (maximum 5–6 sentences).
+4. Do NOT use resume summary format.
+5. Maintain a professional tone.
+6. Avoid long explanations.
+
+Be helpful but brief.
 """
 
         response = call_openrouter(system_prompt, user_message)
 
-    # Basic sensitive check
+    # ======================================================
+    # Sensitive Output Protection
+    # ======================================================
     if any(word in response.lower() for word in ["api key", "system prompt"]):
+        logger.warning("Sensitive content detected in response.")
         return "⚠️ Response blocked due to security validation."
 
     return response
